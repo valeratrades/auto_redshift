@@ -13,15 +13,10 @@
 
 unimplemented!()
 </details>
-
-<details>
-  <summary>
-    <h2>Usage<h2>
-  </summary>
-
-unimplemented!()
-</details>
 <!-- markdownlint-restore -->
+
+## Usage
+do `auto_redshift %H:%M`, where the time is the target bedtime. Script will then calculate the optimal temperature and brightness of the screen every 30m.
 
 
 <br>
