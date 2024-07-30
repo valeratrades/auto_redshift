@@ -1,28 +1,36 @@
 use chrono::prelude::*;
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+use config::AppConfig;
 use std::{
 	ffi::OsStr,
 	process::{Command, Output},
 };
+use v_utils::io::ExpandedPath;
+pub mod config;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
 	#[command(subcommand)]
 	command: Commands,
+	#[arg(long, default_value = "~/.config/auto_redshift.toml")]
+	config: ExpandedPath,
 }
 #[derive(Subcommand)]
 enum Commands {
 	Start(StartArgs),
 }
 
-#[derive(Args)]
+#[derive(Args, Clone, Debug, Default, Copy)]
 struct StartArgs {
-	//TODO!: do direct deser to actual waketime format
-	waketime: String,
+	/// Cycle through wallpapers as day phases change
+	#[arg(long)]
+	wallpapers: bool,
+
+	waketime: Waketime,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default, derive_new::new, Copy)]
 struct Waketime {
 	hours: u32,
 	minutes: u32,
@@ -38,13 +46,15 @@ impl From<String> for Waketime {
 }
 
 fn main() {
-	let args: Vec<String> = std::env::args().collect();
-	assert!(
-		args.len() == 2,
-		"ERROR: provide one and only one argument, being the bedtime in format: '%H:%M'"
-	);
-	let waketime: Waketime = args[1].clone().into();
+	let cli = Cli::parse();
+	let config = config::AppConfig::read(cli.config.as_ref()).unwrap();
+	match cli.command {
+		Commands::Start(args) => start(config, args),
+	}
+}
 
+fn start(config: AppConfig, args: StartArgs) {
+	let waketime = args.waketime;
 	// dancing with tambourine to get into the 30m cycle
 	// god forgive me
 	let good_minutes_small = (waketime.minutes + 1) % 30; // +1 is offset of the cycle by 1m, to prevent bugs from having undecisive behavior on definition borders
@@ -58,15 +68,15 @@ fn main() {
 	} else {
 		_wait_to_sync_m = good_minutes_small + 60 - m;
 	}
-	set_redshift(&waketime);
+	set_redshift(&config, &waketime, args.wallpapers);
 	std::thread::sleep(std::time::Duration::from_secs(_wait_to_sync_m as u64 * 60));
 	loop {
-		set_redshift(&waketime);
+		set_redshift(&config, &waketime, args.wallpapers);
 		std::thread::sleep(std::time::Duration::from_secs(30 * 60));
 	}
 }
 
-fn set_redshift(waketime: &Waketime) {
+fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool) {
 	let nm = Utc::now().hour() * 60 + Utc::now().minute();
 	let wt = waketime.hours * 60 + waketime.minutes;
 
@@ -86,19 +96,21 @@ fn set_redshift(waketime: &Waketime) {
 		_ => "night".to_owned(),
 	};
 
-	// by default we have brightness=1 and temperature=6500. With every level we decrease them by 0.0275 and 210 accordingly. Max redshift is level 20, where we arrive at 0.45 and 2300 accordingly.
+	// redshift is a number from 0 to 20
 	let redshift: u32;
 	// wallpapers are in ~/Wallpapers
 	let wallpaper: &str;
+	let brightness_step = (config.brightness_range.1 - config.brightness_range.0) / 20.0;
+	let temperature_step = (config.temperature_range.1 - config.temperature_range.0) as f32 / 20.0;
 
 	match day_section.as_str() {
 		"morning" => {
 			redshift = 0;
-			wallpaper = "1929.jpg";
+			wallpaper = &config.wallpapers.morning;
 		}
 		"day" => {
 			redshift = 0;
-			wallpaper = "AndreySakharov.jpg";
+			wallpaper = &config.wallpapers.day;
 		}
 		"evening" => {
 			if now_shifted > 12 * 60 {
@@ -106,34 +118,30 @@ fn set_redshift(waketime: &Waketime) {
 			} else {
 				redshift = 0;
 			}
-			wallpaper = "girl_with_a_perl_earring.jpg";
+			wallpaper = &config.wallpapers.evening;
 		}
 		"night" => {
 			redshift = 20;
-			wallpaper = "girl_with_a_perl_earring.jpg";
+			wallpaper = &config.wallpapers.night;
 		}
 		_ => unreachable!(),
 	}
 
 	if redshift != 0 {
-		let temperature: f32 = 6500.0 - redshift as f32 * 210.0;
-		let brightness: f32 = 1.0 - redshift as f32 * 0.0275;
+		let temperature: f32 = config.temperature_range.1 as f32 - redshift as f32 * temperature_step;
+		let brightness: f32 = config.brightness_range.1 - redshift as f32 * brightness_step;
 
 		let extra_characters: &[_] = &['(', ')', ','];
-		let current_temperature_output = cmd(
-			"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get"
-				.to_owned(),
-		);
+		let current_temperature_output =
+			cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
 		let current_temperature = String::from_utf8_lossy(&current_temperature_output.stdout)
 			.trim()
 			.to_string()
 			.trim_matches(extra_characters)
 			.parse()
 			.unwrap();
-		let current_brightness_output = cmd(
-			"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get"
-				.to_owned(),
-		);
+		let current_brightness_output =
+			cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
 		let current_brightness = String::from_utf8_lossy(&current_brightness_output.stdout)
 			.trim()
 			.to_string()
@@ -145,7 +153,10 @@ fn set_redshift(waketime: &Waketime) {
 			let _ = cmd(format!("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}", temperature, brightness));
 		}
 	}
-	let _ = cmd(format!("swaymsg output '*' bg ~/Wallpapers/{} fill", wallpaper));
+	if wallpapers {
+		let wallpaper_path = config.wallpapers.root.join(wallpaper);
+		let _ = cmd(format!("swaymsg output '*' bg {} fill", wallpaper_path.to_str().unwrap()));
+	}
 }
 
 fn cmd<S>(command: S) -> Output
