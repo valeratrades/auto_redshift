@@ -51,3 +51,4 @@ venv/
 ## Rust
 .cargo/config.toml
 .cargo/config
+!Cargo.lock
