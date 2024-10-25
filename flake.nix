@@ -1,29 +1,26 @@
 {
-  inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
-    naersk.url = "github:nix-community/naersk";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  description = "My Rust Package";
+
+  outputs = { self, nixpkgs }: {
+    packages.${self.system} = let
+      pkgs = import nixpkgs { system = self.system; };
+    in
+    pkgs.stdenv.mkDerivation {
+      pname = "auto_redshift";
+      version = "0.1.0";
+
+      src = ./.;
+
+      buildInputs = [ pkgs.rust ];
+
+      buildPhase = ''
+        cargo build --release
+      '';
+
+      installPhase = ''
+        mkdir -p $out/bin
+        cp target/release/auto_redshift $out/bin/
+      '';
+    };
   };
-
-  outputs = { self, flake-utils, naersk, nixpkgs }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = (import nixpkgs) {
-          inherit system;
-        };
-
-        naersk' = pkgs.callPackage naersk {};
-
-      in rec {
-        # For `nix build` & `nix run`:
-        defaultPackage = naersk'.buildPackage {
-          src = ./.;
-        };
-
-        # For `nix develop`:
-        devShell = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [ rustc cargo ];
-        };
-      }
-    );
 }
