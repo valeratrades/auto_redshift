@@ -19,11 +19,10 @@
         defaultPackage = naersk'.buildPackage {
           src = ./.;
         };
-
-        # For `nix develop`:
-        devShell = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [ rustc cargo ];
-        };
+        ## For `nix develop`:
+        #devShell = pkgs.mkShell {
+        #  nativeBuildInputs = with pkgs; [ rustc cargo ];
+        #};
       }
     );
 }
