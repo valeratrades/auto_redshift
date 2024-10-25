@@ -1,12 +1,10 @@
 { pkgs ? import <nixpkgs> { } }:
-#let
-#	manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
-#in
+let
+	manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
+in
 pkgs.rustPlatform.buildRustPackage rec {
-  #pname = manifest.name;
-  #version = manifest.version;
-	pname = "auto_redshift";
-	version = "0.1.0";
+  pname = manifest.name;
+  version = manifest.version;
 
   cargoLock.lockFile = ./Cargo.lock;
   src = pkgs.lib.cleanSource ./.;
