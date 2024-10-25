@@ -12,10 +12,10 @@ get_first = "allow"
 len_zero = "allow"
 
 [dependencies]
-anyhow = "^1.0.86"
+anyhow = "^1.0.91"
 chrono = "0.4.38"
-clap = { version = "^4.5.4", features = ["derive"] }
-config = "0.14.0"
-derive-new = "^0.6.0"
-serde = "1.0.204"
-v_utils = { version = "1.4.1", features = ["io", "macros"] }
+clap = { version = "^4.5.20", features = ["derive"] }
+config = "0.14.1"
+derive-new = "^0.7.0"
+serde = "1.0.213"
+v_utils = { version = "1.7.8", features = ["io", "macros"] }
