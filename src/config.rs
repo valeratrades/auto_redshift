@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer};
 use std::path::{Path, PathBuf};
 use v_utils::macros::MyConfigPrimitives;
 
-#[derive(Clone, Debug, Default, Deserialize, MyConfigPrimitives)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct AppConfig {
 	#[serde(deserialize_with = "deserialize_tuple")]
 	pub brightness_range: (f32, f32),
