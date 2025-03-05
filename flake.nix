@@ -51,7 +51,7 @@
 
               Service = {
                 Type = "simple";
-                ExecStart = ''${cfg.package}/bin/{pname} start ${cfg.wakeTime}'';
+                ExecStart = ''${cfg.package}/bin/${pname} start ${cfg.wakeTime}'';
                 Restart = "on-failure";
               };
             };
