@@ -39,7 +39,7 @@
           };
 
           config = mkIf cfg.enable {
-            systemd.user.services.tg-server = {
+            systemd.user.services.${pname} = {
               Unit = {
                 Description = "Auto Redshift";
                 After = [ "graphical-session.target" ];
