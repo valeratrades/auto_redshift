@@ -27,6 +27,7 @@ struct StartArgs {
 	#[arg(long)]
 	wallpapers: bool,
 
+	n_hours: f32,
 	waketime: Waketime,
 }
 
@@ -39,8 +40,8 @@ impl From<String> for Waketime {
 	fn from(s: String) -> Self {
 		let split: Vec<_> = s.split(':').collect();
 		assert!(split.len() == 2, "ERROR: waketime should be supplied in the format: \"%H:%M\"");
-		let hours: u32 = split[0].parse().unwrap();
-		let minutes: u32 = split[1].parse().unwrap();
+		let hours = split[0].parse().unwrap();
+		let minutes = split[1].parse().unwrap();
 		Waketime { hours, minutes }
 	}
 }
@@ -68,15 +69,15 @@ fn start(config: AppConfig, args: StartArgs) {
 	} else {
 		_wait_to_sync_m = good_minutes_small + 60 - m;
 	}
-	set_redshift(&config, &waketime, args.wallpapers);
+	set_redshift(&config, &waketime, args.wallpapers, args.n_hours);
 	std::thread::sleep(std::time::Duration::from_secs(_wait_to_sync_m as u64 * 60));
 	loop {
-		set_redshift(&config, &waketime, args.wallpapers);
+		set_redshift(&config, &waketime, args.wallpapers, args.n_hours);
 		std::thread::sleep(std::time::Duration::from_secs(30 * 60));
 	}
 }
 
-fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool) {
+fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool, n_hours: f32) {
 	let nm = Utc::now().hour() * 60 + Utc::now().minute();
 	let wt = waketime.hours * 60 + waketime.minutes;
 
@@ -96,40 +97,41 @@ fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool) {
 		_ => "night".to_owned(),
 	};
 
-	// redshift is a number from 0 to 20
-	let redshift: u32;
-	// wallpapers are in ~/Wallpapers
-	let wallpaper: &str;
+	let redshift: f32; // redshift is a number from 0 to 20
+	let max_redshift = 20.0; //TODO: switch to 0.->100. as normal people would do
+	let wallpaper: &str; // wallpapers are in ~/Wallpapers
 	let brightness_step = (config.brightness_range.1 - config.brightness_range.0) / 20.0;
 	let temperature_step = (config.temperature_range.1 - config.temperature_range.0) as f32 / 20.0;
 
 	match day_section.as_str() {
 		"morning" => {
-			redshift = 0;
+			redshift = 0.;
 			wallpaper = &config.wallpapers.morning;
 		}
 		"day" => {
-			redshift = 0;
+			redshift = 0.;
 			wallpaper = &config.wallpapers.day;
 		}
 		"evening" => {
 			if now_shifted > 12 * 60 {
-				redshift = ((now_shifted as f32 / 60.0 - 12.0 + 0.5) * 5.0) as u32;
+				let shift_by_h = 16. - n_hours;
+				redshift = (now_shifted as f32 / 60.0 - (shift_by_h)) * (max_redshift / n_hours);
+				assert!(redshift <= 20.0, "redshift value is out of bounds");
 			} else {
-				redshift = 0;
+				redshift = 0.;
 			}
 			wallpaper = &config.wallpapers.evening;
 		}
 		"night" => {
-			redshift = 20;
+			redshift = 20.;
 			wallpaper = &config.wallpapers.night;
 		}
 		_ => unreachable!(),
 	}
 
-	if redshift != 0 {
-		let temperature: f32 = config.temperature_range.1 as f32 - redshift as f32 * temperature_step;
-		let brightness: f32 = config.brightness_range.1 - redshift as f32 * brightness_step;
+	if redshift != 0. {
+		let temperature: f32 = config.temperature_range.1 as f32 - redshift * temperature_step;
+		let brightness: f32 = config.brightness_range.1 - redshift * brightness_step;
 
 		let extra_characters: &[_] = &['(', ')', ','];
 		let current_temperature_output =
