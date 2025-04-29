@@ -27,6 +27,7 @@ struct StartArgs {
 	#[arg(long)]
 	wallpapers: bool,
 
+	#[arg(long, default_value = "4.0")]
 	n_hours: f32,
 	waketime: Waketime,
 }
