@@ -27,7 +27,7 @@
 
             package = mkOption {
               type = package;
-              default = self.packages.${pkgs.system}.default;
+              default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
               description = "The package to use.";
             };
 
