@@ -8,6 +8,73 @@ use std::{
 use v_utils::io::ExpandedPath;
 pub mod config;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DaySection {
+	Morning,
+	Day,
+	Evening,
+	Night,
+}
+
+impl std::fmt::Display for DaySection {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			DaySection::Morning => write!(f, "morning"),
+			DaySection::Day => write!(f, "day"),
+			DaySection::Evening => write!(f, "evening"),
+			DaySection::Night => write!(f, "night"),
+		}
+	}
+}
+
+/// Result of evaluating time against waketime
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimeEvaluation {
+	pub now_shifted: i32,
+	pub day_section: DaySection,
+	pub redshift: f32,
+}
+
+/// Pure function to evaluate time. Takes current hour/minute and waketime, returns evaluation result.
+pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, n_hours: f32) -> TimeEvaluation {
+	let nm = current_hour * 60 + current_minute;
+	let wt = waketime.hours * 60 + waketime.minutes;
+
+	let mut now_shifted = nm as i32 - wt as i32;
+	if now_shifted < 0 {
+		now_shifted += 24 * 60;
+	}
+
+	let day_section = match now_shifted {
+		t if (t > 20 * 60) || (t <= 150) => DaySection::Morning,
+		t if t <= 150 + 8 * 60 => DaySection::Day,
+		t if t <= 16 * 60 => DaySection::Evening,
+		_ => DaySection::Night,
+	};
+
+	let max_redshift = 20.0;
+	let redshift = match &day_section {
+		DaySection::Morning => 0.,
+		DaySection::Day => 0.,
+		DaySection::Evening => {
+			if now_shifted > 12 * 60 {
+				let shift_by_h = 16. - n_hours;
+				let r = (now_shifted as f32 / 60.0 - shift_by_h) * (max_redshift / n_hours);
+				r.min(20.0) // clamp to max
+			} else {
+				0.
+			}
+		}
+		DaySection::Night => 20.,
+	};
+
+	TimeEvaluation {
+		now_shifted,
+		day_section,
+		redshift,
+	}
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -33,9 +100,9 @@ struct StartArgs {
 }
 
 #[derive(Clone, Debug, Default, derive_new::new, Copy)]
-struct Waketime {
-	hours: u32,
-	minutes: u32,
+pub struct Waketime {
+	pub hours: u32,
+	pub minutes: u32,
 }
 impl From<String> for Waketime {
 	fn from(s: String) -> Self {
@@ -79,56 +146,20 @@ fn start(config: AppConfig, args: StartArgs) {
 }
 
 fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool, n_hours: f32) {
-	let nm = Utc::now().hour() * 60 + Utc::now().minute();
-	let wt = waketime.hours * 60 + waketime.minutes;
+	let now = Utc::now();
+	let eval = evaluate_time(now.hour(), now.minute(), waketime, n_hours);
 
-	// shift everything wt minutes back
-	// in python would be `(nm - wt) % 24`, but rust doesn't want to exhibit desired behaviour with % on negative numbers
-	let mut now_shifted = nm as i32 - wt as i32;
-	if now_shifted < 0 {
-		now_shifted += 24 * 60;
-	}
+	dbg!(&eval.now_shifted);
 
-	dbg!(&now_shifted);
-	// I guess I could be taking the day section borders as args
-	let day_section: String = match now_shifted {
-		t if (t > 20 * 60) || (t <= 150) => "morning".to_owned(),
-		t if t <= 150 + 8 * 60 => "day".to_owned(),
-		t if t <= 16 * 60 => "evening".to_owned(),
-		_ => "night".to_owned(),
+	let redshift = eval.redshift;
+	let wallpaper: &str = match &eval.day_section {
+		DaySection::Morning => &config.wallpapers.morning,
+		DaySection::Day => &config.wallpapers.day,
+		DaySection::Evening => &config.wallpapers.evening,
+		DaySection::Night => &config.wallpapers.night,
 	};
-
-	let redshift: f32; // redshift is a number from 0 to 20
-	let max_redshift = 20.0; //TODO: switch to 0.->100. as normal people would do
-	let wallpaper: &str; // wallpapers are in ~/Wallpapers
 	let brightness_step = (config.brightness_range.1 - config.brightness_range.0) / 20.0;
 	let temperature_step = (config.temperature_range.1 - config.temperature_range.0) as f32 / 20.0;
-
-	match day_section.as_str() {
-		"morning" => {
-			redshift = 0.;
-			wallpaper = &config.wallpapers.morning;
-		}
-		"day" => {
-			redshift = 0.;
-			wallpaper = &config.wallpapers.day;
-		}
-		"evening" => {
-			if now_shifted > 12 * 60 {
-				let shift_by_h = 16. - n_hours;
-				redshift = (now_shifted as f32 / 60.0 - (shift_by_h)) * (max_redshift / n_hours);
-				assert!(redshift <= 20.0, "redshift value is out of bounds");
-			} else {
-				redshift = 0.;
-			}
-			wallpaper = &config.wallpapers.evening;
-		}
-		"night" => {
-			redshift = 20.;
-			wallpaper = &config.wallpapers.night;
-		}
-		_ => unreachable!(),
-	}
 
 	if redshift != 0. {
 		let temperature: f32 = config.temperature_range.1 as f32 - redshift * temperature_step;
@@ -168,4 +199,69 @@ where
 {
 	let output = Command::new("sh").arg("-c").arg(command).output().unwrap();
 	output
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Generates a snapshot of time evaluations from 12:00 to 24:00 (midnight)
+	/// with waketime set to 6:00 and n_hours = 4.0
+	#[test]
+	fn test_time_evaluation_12h_to_24h() {
+		let waketime = Waketime::new(6, 0);
+		let n_hours = 4.0;
+
+		let mut output = String::new();
+		output.push_str("Time evaluation from 12:00 to 24:00 with waketime=6:00, n_hours=4.0\n");
+		output.push_str("================================================================\n\n");
+
+		// 12:00 to 24:00 (we use 0:00 for midnight)
+		for hour in 12..=23 {
+			for minute in [0, 30] {
+				let eval = evaluate_time(hour, minute, &waketime, n_hours);
+				output.push_str(&format!(
+					"{:02}:{:02} -> shifted={:4}m, section={:8}, redshift={:.2}\n",
+					hour, minute, eval.now_shifted, eval.day_section, eval.redshift
+				));
+			}
+		}
+		// Add midnight (00:00)
+		let eval = evaluate_time(0, 0, &waketime, n_hours);
+		output.push_str(&format!(
+			"{:02}:{:02} -> shifted={:4}m, section={:8}, redshift={:.2}\n",
+			0, 0, eval.now_shifted, eval.day_section, eval.redshift
+		));
+
+		insta::assert_snapshot!(output, @"
+		Time evaluation from 12:00 to 24:00 with waketime=6:00, n_hours=4.0
+		================================================================
+
+		12:00 -> shifted= 360m, section=day, redshift=0.00
+		12:30 -> shifted= 390m, section=day, redshift=0.00
+		13:00 -> shifted= 420m, section=day, redshift=0.00
+		13:30 -> shifted= 450m, section=day, redshift=0.00
+		14:00 -> shifted= 480m, section=day, redshift=0.00
+		14:30 -> shifted= 510m, section=day, redshift=0.00
+		15:00 -> shifted= 540m, section=day, redshift=0.00
+		15:30 -> shifted= 570m, section=day, redshift=0.00
+		16:00 -> shifted= 600m, section=day, redshift=0.00
+		16:30 -> shifted= 630m, section=day, redshift=0.00
+		17:00 -> shifted= 660m, section=evening, redshift=0.00
+		17:30 -> shifted= 690m, section=evening, redshift=0.00
+		18:00 -> shifted= 720m, section=evening, redshift=0.00
+		18:30 -> shifted= 750m, section=evening, redshift=2.50
+		19:00 -> shifted= 780m, section=evening, redshift=5.00
+		19:30 -> shifted= 810m, section=evening, redshift=7.50
+		20:00 -> shifted= 840m, section=evening, redshift=10.00
+		20:30 -> shifted= 870m, section=evening, redshift=12.50
+		21:00 -> shifted= 900m, section=evening, redshift=15.00
+		21:30 -> shifted= 930m, section=evening, redshift=17.50
+		22:00 -> shifted= 960m, section=evening, redshift=20.00
+		22:30 -> shifted= 990m, section=night, redshift=20.00
+		23:00 -> shifted=1020m, section=night, redshift=20.00
+		23:30 -> shifted=1050m, section=night, redshift=20.00
+		00:00 -> shifted=1080m, section=night, redshift=20.00
+		");
+	}
 }
