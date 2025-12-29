@@ -12,13 +12,13 @@ get_first = "allow"
 len_zero = "allow"
 
 [dependencies]
-anyhow = "^1.0.100"
-chrono = "0.4.42"
-clap = { version = "^4.5.53", features = ["derive"] }
+anyhow = "^1.0.91"
+chrono = "0.4.38"
+clap = { version = "^4.5.20", features = ["derive"] }
 config = "0.15.19"
 derive-new = "^0.7.0"
-serde = "1.0.228"
-v_utils = { version = "2.15.11", features = ["io", "macros"] }
+serde = "1.0.213"
+v_utils = { version = "1.7.8", features = ["io", "macros"] }
 
 [dev-dependencies]
-insta = "1.45"
+insta = "1.41"
