@@ -53,6 +53,36 @@ pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), t
 	DisplaySettings { temperature, brightness }
 }
 
+/// Get current display settings from wlr_gamma_service
+fn get_current_display_settings() -> Option<DisplaySettings> {
+	let extra_characters: &[_] = &['(', ')', ','];
+
+	let temp_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
+	let temperature: f32 = String::from_utf8_lossy(&temp_output.stdout)
+		.trim()
+		.trim_matches(extra_characters)
+		.parse()
+		.ok()?;
+
+	let bright_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
+	let brightness: f32 = String::from_utf8_lossy(&bright_output.stdout)
+		.trim()
+		.trim_matches(extra_characters)
+		.parse()
+		.ok()?;
+
+	Some(DisplaySettings { temperature, brightness })
+}
+
+/// Apply display settings via wlr_gamma_service
+fn apply_display_settings(display: &DisplaySettings) {
+	cmd(format!(
+		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && \
+		 gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}",
+		display.temperature, display.brightness
+	));
+}
+
 /// Pure function to evaluate time. Takes current hour/minute and waketime, returns evaluation result.
 pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, n_hours: f32) -> TimeEvaluation {
 	let nm = current_hour * 60 + current_minute;
@@ -104,6 +134,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
 	Start(StartArgs),
+	/// Debug: set a specific redshift value and exit
+	Dbg { redshift: f32 },
 }
 
 #[derive(Args, Clone, Debug, Default, Copy)]
@@ -137,7 +169,14 @@ fn main() {
 	let config = config::AppConfig::read(cli.config.as_ref()).unwrap();
 	match cli.command {
 		Commands::Start(args) => start(config, args),
+		Commands::Dbg { redshift } => dbg_set_redshift(&config, redshift),
 	}
+}
+
+fn dbg_set_redshift(config: &AppConfig, redshift: f32) {
+	let display = calculate_display_settings(redshift, config.brightness_range, config.temperature_range);
+	println!("redshift={} -> brightness={}, temperature={}", redshift, display.brightness, display.temperature);
+	apply_display_settings(&display);
 }
 
 fn start(config: AppConfig, args: StartArgs) {
@@ -169,45 +208,29 @@ fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool, n_hou
 
 	dbg!(&eval.now_shifted);
 
-	let redshift = eval.redshift;
 	let wallpaper: &str = match &eval.day_section {
 		DaySection::Morning => &config.wallpapers.morning,
 		DaySection::Day => &config.wallpapers.day,
 		DaySection::Evening => &config.wallpapers.evening,
 		DaySection::Night => &config.wallpapers.night,
 	};
-	let brightness_step = (config.brightness_range.1 - config.brightness_range.0) / 20.0;
-	let temperature_step = (config.temperature_range.1 - config.temperature_range.0) as f32 / 20.0;
 
-	if redshift != 0. {
-		let temperature: f32 = config.temperature_range.1 as f32 - redshift * temperature_step;
-		let brightness: f32 = config.brightness_range.1 - redshift * brightness_step;
+	if eval.redshift != 0. {
+		let display = calculate_display_settings(eval.redshift, config.brightness_range, config.temperature_range);
+		let current = get_current_display_settings();
 
-		let extra_characters: &[_] = &['(', ')', ','];
-		let current_temperature_output =
-			cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
-		let current_temperature = String::from_utf8_lossy(&current_temperature_output.stdout)
-			.trim()
-			.to_string()
-			.trim_matches(extra_characters)
-			.parse()
-			.unwrap();
-		let current_brightness_output =
-			cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
-		let current_brightness = String::from_utf8_lossy(&current_brightness_output.stdout)
-			.trim()
-			.to_string()
-			.trim_matches(extra_characters)
-			.parse()
-			.unwrap();
-
-		if temperature < current_temperature && brightness < current_brightness {
-			let _ = cmd(format!("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}", temperature, brightness));
+		if let Some(curr) = current {
+			if display.temperature < curr.temperature && display.brightness < curr.brightness {
+				apply_display_settings(&display);
+			}
+		} else {
+			apply_display_settings(&display);
 		}
 	}
+
 	if wallpapers {
 		let wallpaper_path = config.wallpapers.root.join(wallpaper);
-		let _ = cmd(format!("swaymsg output '*' bg {} fill", wallpaper_path.to_str().unwrap()));
+		cmd(format!("swaymsg output '*' bg {} fill", wallpaper_path.to_str().unwrap()));
 	}
 }
 
