@@ -1,9 +1,13 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
-  outputs = { self, nixpkgs }:
-		
+  outputs = { self, nixpkgs, fenix }:
+
     let
       supportedSystems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
@@ -12,8 +16,33 @@
 			pname = manifest.name;
     in {
       packages = forAllSystems (system: {
-        default = pkgsFor.${system}.callPackage ./default.nix { };
+        default =
+          let
+            pkgs = pkgsFor.${system};
+            toolchain = fenix.packages.${system}.minimal.toolchain;
+          in
+          (pkgs.makeRustPlatform {
+            cargo = toolchain;
+            rustc = toolchain;
+          }).buildRustPackage {
+            pname = manifest.name;
+            version = manifest.version;
+            cargoLock.lockFile = ./Cargo.lock;
+            src = pkgs.lib.cleanSource ./.;
+          };
       });
+
+      devShells = forAllSystems (system:
+        let
+          pkgs = pkgsFor.${system};
+          toolchain = fenix.packages.${system}.default.toolchain;
+        in {
+          default = pkgs.mkShell {
+            buildInputs = [ toolchain ];
+          };
+        }
+      );
+
       #good ref: https://github.com/NixOS/nixpkgs/blob/04ef94c4c1582fd485bbfdb8c4a8ba250e359195/nixos/modules/services/audio/navidrome.nix#L89
       homeManagerModules."${pname}" = { config, lib, pkgs, ... }:
         let

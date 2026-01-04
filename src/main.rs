@@ -1,10 +1,11 @@
-use chrono::prelude::*;
 use clap::{Args, Parser, Subcommand};
 use config::AppConfig;
+use jiff::Zoned;
 use std::{
 	ffi::OsStr,
 	process::{Command, Output},
 };
+use tracing::info;
 use v_utils::io::ExpandedPath;
 pub mod config;
 
@@ -57,14 +58,16 @@ pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), t
 fn get_current_display_settings() -> Option<DisplaySettings> {
 	let extra_characters: &[_] = &['(', ')', ','];
 
-	let temp_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
+	let temp_output =
+		cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
 	let temperature: f32 = String::from_utf8_lossy(&temp_output.stdout)
 		.trim()
 		.trim_matches(extra_characters)
 		.parse()
 		.ok()?;
 
-	let bright_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
+	let bright_output =
+		cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
 	let brightness: f32 = String::from_utf8_lossy(&bright_output.stdout)
 		.trim()
 		.trim_matches(extra_characters)
@@ -135,7 +138,9 @@ struct Cli {
 enum Commands {
 	Start(StartArgs),
 	/// Debug: set a specific redshift value and exit
-	Dbg { redshift: f32 },
+	Dbg {
+		redshift: f32,
+	},
 }
 
 #[derive(Args, Clone, Debug, Default, Copy)]
@@ -165,6 +170,8 @@ impl From<String> for Waketime {
 }
 
 fn main() {
+	v_utils::clientside!();
+
 	let cli = Cli::parse();
 	let config = config::AppConfig::read(cli.config.as_ref()).unwrap();
 	match cli.command {
@@ -175,7 +182,10 @@ fn main() {
 
 fn dbg_set_redshift(config: &AppConfig, redshift: f32) {
 	let display = calculate_display_settings(redshift, config.brightness_range, config.temperature_range);
-	println!("redshift={} -> brightness={}, temperature={}", redshift, display.brightness, display.temperature);
+	println!(
+		"redshift={} -> brightness={}, temperature={}",
+		redshift, display.brightness, display.temperature
+	);
 	apply_display_settings(&display);
 }
 
@@ -185,17 +195,16 @@ fn start(config: AppConfig, args: StartArgs) {
 	// god forgive me
 	let good_minutes_small = (waketime.minutes + 1) % 30; // +1 is offset of the cycle by 1m, to prevent bugs from having undecisive behavior on definition borders
 	let good_minutes_big = good_minutes_small + 30;
-	let m = Utc::now().minute();
-	let mut _wait_to_sync_m = 0;
-	if m <= good_minutes_small && good_minutes_small != 0 {
-		_wait_to_sync_m = good_minutes_small - m;
+	let m = Zoned::now().minute() as u32;
+	let wait_to_sync_m = if m <= good_minutes_small && good_minutes_small != 0 {
+		good_minutes_small - m
 	} else if m <= good_minutes_big {
-		_wait_to_sync_m = good_minutes_big - m;
+		good_minutes_big - m
 	} else {
-		_wait_to_sync_m = good_minutes_small + 60 - m;
-	}
+		good_minutes_small + 60 - m
+	};
 	set_redshift(&config, &waketime, args.wallpapers, args.n_hours);
-	std::thread::sleep(std::time::Duration::from_secs(_wait_to_sync_m as u64 * 60));
+	std::thread::sleep(std::time::Duration::from_secs(wait_to_sync_m as u64 * 60));
 	loop {
 		set_redshift(&config, &waketime, args.wallpapers, args.n_hours);
 		std::thread::sleep(std::time::Duration::from_secs(30 * 60));
@@ -203,10 +212,8 @@ fn start(config: AppConfig, args: StartArgs) {
 }
 
 fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool, n_hours: f32) {
-	let now = Utc::now();
-	let eval = evaluate_time(now.hour(), now.minute(), waketime, n_hours);
-
-	dbg!(&eval.now_shifted);
+	let now = Zoned::now();
+	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, n_hours);
 
 	let wallpaper: &str = match &eval.day_section {
 		DaySection::Morning => &config.wallpapers.morning,
@@ -215,16 +222,31 @@ fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool, n_hou
 		DaySection::Night => &config.wallpapers.night,
 	};
 
-	if eval.redshift != 0. {
-		let display = calculate_display_settings(eval.redshift, config.brightness_range, config.temperature_range);
-		let current = get_current_display_settings();
+	let target = calculate_display_settings(eval.redshift, config.brightness_range, config.temperature_range);
+	let current = get_current_display_settings();
 
-		if let Some(curr) = current {
-			if display.temperature < curr.temperature && display.brightness < curr.brightness {
-				apply_display_settings(&display);
-			}
+	info!(
+		now_shifted = eval.now_shifted,
+		section = %eval.day_section,
+		redshift = eval.redshift,
+		target_brightness = target.brightness,
+		target_temperature = target.temperature,
+		current_brightness = current.as_ref().map(|c| c.brightness),
+		current_temperature = current.as_ref().map(|c| c.temperature),
+		"evaluating redshift"
+	);
+
+	if eval.redshift != 0. {
+		let should_apply = current
+			.as_ref()
+			.map(|curr| target.temperature < curr.temperature && target.brightness < curr.brightness)
+			.unwrap_or(true);
+
+		if should_apply {
+			info!(brightness = target.brightness, temperature = target.temperature, "applying display settings");
+			apply_display_settings(&target);
 		} else {
-			apply_display_settings(&display);
+			info!("skipping apply: current values already lower or equal");
 		}
 	}
 
