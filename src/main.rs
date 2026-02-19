@@ -1,12 +1,14 @@
-use clap::{Args, Parser, Subcommand};
-use config::AppConfig;
-use jiff::Zoned;
 use std::{
 	ffi::OsStr,
 	process::{Command, Output},
+	sync::Arc,
 };
+
+use clap::Parser;
+use config::{AppConfig, Commands, LiveSettings, StartArgs, Waketime};
+use jiff::Zoned;
 use tracing::info;
-use v_utils::io::ExpandedPath;
+
 pub mod config;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,57 +128,19 @@ pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime
 	}
 }
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-	#[command(subcommand)]
-	command: Commands,
-	#[arg(long, default_value = "~/.config/auto_redshift.toml")]
-	config: ExpandedPath,
-}
-#[derive(Subcommand)]
-enum Commands {
-	Start(StartArgs),
-	/// Debug: set a specific redshift value and exit
-	Dbg {
-		redshift: f32,
-	},
-}
-
-#[derive(Args, Clone, Debug, Default, Copy)]
-struct StartArgs {
-	/// Cycle through wallpapers as day phases change
-	#[arg(long)]
-	wallpapers: bool,
-
-	#[arg(long, default_value = "4.0")]
-	n_hours: f32,
-	waketime: Waketime,
-}
-
-#[derive(Clone, Debug, Default, derive_new::new, Copy)]
-pub struct Waketime {
-	pub hours: u32,
-	pub minutes: u32,
-}
-impl From<String> for Waketime {
-	fn from(s: String) -> Self {
-		let split: Vec<_> = s.split(':').collect();
-		assert!(split.len() == 2, "ERROR: waketime should be supplied in the format: \"%H:%M\"");
-		let hours = split[0].parse().unwrap();
-		let minutes = split[1].parse().unwrap();
-		Waketime { hours, minutes }
-	}
-}
-
 fn main() {
 	v_utils::clientside!();
 
-	let cli = Cli::parse();
-	let config = config::AppConfig::read(cli.config.as_ref()).unwrap();
+	let cli = config::Cli::parse();
+	let settings = LiveSettings::new(cli.settings_flags, std::time::Duration::from_secs(60)).unwrap();
+	let settings = Arc::new(settings);
+
 	match cli.command {
-		Commands::Start(args) => start(config, args),
-		Commands::Dbg { redshift } => dbg_set_redshift(&config, redshift),
+		Commands::Start(args) => start(settings, args),
+		Commands::Dbg { redshift } => {
+			let config = settings.config().unwrap();
+			dbg_set_redshift(&config, redshift);
+		}
 	}
 }
 
@@ -189,12 +153,14 @@ fn dbg_set_redshift(config: &AppConfig, redshift: f32) {
 	apply_display_settings(&display);
 }
 
-fn start(config: AppConfig, args: StartArgs) {
+fn start(settings: Arc<LiveSettings>, args: StartArgs) {
 	let waketime = args.waketime;
-	// dancing with tambourine to get into the 30m cycle
-	// god forgive me
-	let good_minutes_small = (waketime.minutes + 1) % 30; // +1 is offset of the cycle by 1m, to prevent bugs from having undecisive behavior on definition borders
-	let good_minutes_big = good_minutes_small + 30;
+	let config = settings.config().unwrap();
+	let interval_m = config.update_interval_m;
+
+	// sync to interval-aligned minute boundary offset by waketime
+	let good_minutes_small = (waketime.minutes + 1) % interval_m; // +1 is offset of the cycle by 1m, to prevent bugs from having undecisive behavior on definition borders
+	let good_minutes_big = good_minutes_small + interval_m;
 	let m = Zoned::now().minute() as u32;
 	let wait_to_sync_m = if m <= good_minutes_small && good_minutes_small != 0 {
 		good_minutes_small - m
@@ -203,15 +169,17 @@ fn start(config: AppConfig, args: StartArgs) {
 	} else {
 		good_minutes_small + 60 - m
 	};
-	set_redshift(&config, &waketime, args.wallpapers, args.n_hours);
+	set_redshift(&settings, &waketime, args.wallpapers, args.n_hours);
 	std::thread::sleep(std::time::Duration::from_secs(wait_to_sync_m as u64 * 60));
 	loop {
-		set_redshift(&config, &waketime, args.wallpapers, args.n_hours);
-		std::thread::sleep(std::time::Duration::from_secs(30 * 60));
+		set_redshift(&settings, &waketime, args.wallpapers, args.n_hours);
+		let config = settings.config().unwrap();
+		std::thread::sleep(std::time::Duration::from_secs(config.update_interval_m as u64 * 60));
 	}
 }
 
-fn set_redshift(config: &AppConfig, waketime: &Waketime, wallpapers: bool, n_hours: f32) {
+fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: bool, n_hours: f32) {
+	let config = settings.config().unwrap();
 	let now = Zoned::now();
 	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, n_hours);
 

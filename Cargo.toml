@@ -17,9 +17,10 @@ color-eyre = "0.6"
 config = "0.15.19"
 derive-new = "^0.7.0"
 jiff = "0.2"
-serde = "1.0.228"
+serde = { version = "1.0.228", features = ["derive"] }
+smart-default = "0.7.1"
 tracing = "0.1"
-v_utils = { version = "2.15.16", features = ["io", "macros", "tracing", "xdg"] }
+v_utils = { version = "^2.15.19", features = ["io", "macros", "cli", "tracing", "xdg"] }
 
 [dev-dependencies]
 insta = "1.46"
