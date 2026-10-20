@@ -11,7 +11,7 @@ pub fn set_redshift(config: &AppConfig, redshift: f32) {
 }
 
 pub fn lapse(config: &AppConfig, args: LapseArgs) {
-	let initial = get_current_display_settings().expect("wl-gammarelay-rs unreachable; nothing to restore to");
+	let initial = get_current_display_settings().expect("wlr_gamma_service unreachable; nothing to restore to");
 	let restore = move || {
 		println!("restoring brightness={:.2} temperature={:.0}K", initial.brightness, initial.temperature);
 		apply_display_settings(&initial);
