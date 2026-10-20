@@ -143,20 +143,20 @@ fn start(settings: Arc<LiveSettings>, args: StartArgs) {
 	} else {
 		good_minutes_small + 60 - m
 	};
-	set_redshift(&settings, &waketime, args.wallpapers, args.n_hours);
+	set_redshift(&settings, &waketime, args.wallpapers);
 	std::thread::sleep(std::time::Duration::from_secs(wait_to_sync_m as u64 * 60));
 	//LOOP: daemon, runs until killed
 	loop {
-		set_redshift(&settings, &waketime, args.wallpapers, args.n_hours);
+		set_redshift(&settings, &waketime, args.wallpapers);
 		let config = settings.config().unwrap();
 		std::thread::sleep(std::time::Duration::from_secs(config.update_interval_m as u64 * 60));
 	}
 }
 
-fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: bool, n_hours: f32) {
+fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: bool) {
 	let config = settings.config().unwrap();
 	let now = Zoned::now();
-	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, n_hours);
+	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, config.n_hours);
 
 	let wallpaper: &str = match &eval.day_section {
 		DaySection::Morning => &config.wallpapers.morning,

@@ -28,19 +28,15 @@ pub enum Commands {
 }
 #[derive(Clone, Debug, clap::Args)]
 pub struct LapseArgs {
+	#[arg(short, long, default_value = "5s")]
 	pub duration: Timeframe,
 	pub waketime: Waketime,
-	#[arg(long, default_value = "4.0")]
-	pub n_hours: f32,
 }
 #[derive(Clone, Copy, Debug, Default, clap::Args)]
 pub struct StartArgs {
 	/// Cycle through wallpapers as day phases change
 	#[arg(long)]
 	pub wallpapers: bool,
-
-	#[arg(long, default_value = "4.0")]
-	pub n_hours: f32,
 	pub waketime: Waketime,
 }
 /// Controls which brightness backend to use
@@ -72,6 +68,9 @@ pub struct AppConfig {
 	/// Minutes between brightness adjustments
 	#[settings(default = 10)]
 	pub update_interval_m: u32,
+	/// Hours over which redshift ramps from 0 to max, ending at waketime+16h
+	#[settings(default = 4.0)]
+	pub n_hours: f32,
 }
 
 #[derive(Clone, Debug, MyConfigPrimitives, SettingsNested, smart_default::SmartDefault)]
