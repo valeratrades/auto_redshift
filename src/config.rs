@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-
 use clap::Parser;
 use serde::{Deserialize, Deserializer};
 use v_utils::{
-	macros::{LiveSettings, MyConfigPrimitives, Settings, SettingsNested},
+	macros::{LiveSettings, MyConfigPrimitives, Settings},
 	trades::Timeframe,
 };
 
@@ -18,7 +16,9 @@ pub struct Cli {
 }
 #[derive(Debug, clap::Subcommand)]
 pub enum Commands {
-	Start(StartArgs),
+	Start {
+		waketime: Waketime,
+	},
 	/// Debug: set a specific redshift value and exit
 	Dbg {
 		redshift: f32,
@@ -30,13 +30,6 @@ pub enum Commands {
 pub struct LapseArgs {
 	#[arg(short, long, default_value = "5s")]
 	pub duration: Timeframe,
-	pub waketime: Waketime,
-}
-#[derive(Clone, Copy, Debug, Default, clap::Args)]
-pub struct StartArgs {
-	/// Cycle through wallpapers as day phases change
-	#[arg(long)]
-	pub wallpapers: bool,
 	pub waketime: Waketime,
 }
 /// Controls which brightness backend to use
@@ -63,8 +56,6 @@ pub struct AppConfig {
 	#[settings(skip(flag))]
 	#[primitives(skip)]
 	pub brightness_backend: BrightnessBackend,
-	#[settings(flatten)]
-	pub wallpapers: Wallpapers,
 	/// Minutes between brightness adjustments
 	#[settings(default = 10)]
 	pub update_interval_m: u32,
@@ -76,20 +67,7 @@ pub struct AppConfig {
 	pub steps: u32,
 }
 
-#[derive(Clone, Debug, MyConfigPrimitives, SettingsNested, smart_default::SmartDefault)]
-pub struct Wallpapers {
-	pub root: PathBuf,
-	#[default = ""]
-	pub morning: String,
-	#[default = ""]
-	pub day: String,
-	#[default = ""]
-	pub evening: String,
-	#[default = ""]
-	pub night: String,
-}
-
-#[derive(Clone, Copy, Debug, Default, derive_new::new)]
+#[derive(Clone, Copy, Debug, derive_new::new)]
 pub struct Waketime {
 	pub hours: u32,
 	pub minutes: u32,

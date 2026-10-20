@@ -5,7 +5,7 @@ use std::{
 };
 
 use clap::Parser;
-use config::{Commands, LiveSettings, StartArgs, Waketime};
+use config::{Commands, LiveSettings, Waketime};
 use jiff::Zoned;
 use tracing::info;
 use v_utils::trades::Timeframe;
@@ -100,7 +100,7 @@ fn main() {
 	let settings = Arc::new(settings);
 
 	match cli.command {
-		Commands::Start(args) => start(settings, args),
+		Commands::Start { waketime } => start(settings, waketime),
 		Commands::Dbg { redshift } => debug::set_redshift(&settings.config().unwrap(), redshift),
 		Commands::Lapse(args) => debug::lapse(&settings.config().unwrap(), args),
 	}
@@ -127,8 +127,7 @@ fn apply_display_settings(display: &DisplaySettings) {
 	));
 }
 
-fn start(settings: Arc<LiveSettings>, args: StartArgs) {
-	let waketime = args.waketime;
+fn start(settings: Arc<LiveSettings>, waketime: Waketime) {
 	let config = settings.config().unwrap();
 	let interval_m = config.update_interval_m;
 
@@ -143,27 +142,20 @@ fn start(settings: Arc<LiveSettings>, args: StartArgs) {
 	} else {
 		good_minutes_small + 60 - m
 	};
-	set_redshift(&settings, &waketime, args.wallpapers);
+	set_redshift(&settings, &waketime);
 	std::thread::sleep(std::time::Duration::from_secs(wait_to_sync_m as u64 * 60));
 	//LOOP: daemon, runs until killed
 	loop {
-		set_redshift(&settings, &waketime, args.wallpapers);
+		set_redshift(&settings, &waketime);
 		let config = settings.config().unwrap();
 		std::thread::sleep(std::time::Duration::from_secs(config.update_interval_m as u64 * 60));
 	}
 }
 
-fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: bool) {
+fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime) {
 	let config = settings.config().unwrap();
 	let now = Zoned::now();
 	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, config.redshift_duration, config.steps);
-
-	let wallpaper: &str = match &eval.day_section {
-		DaySection::Morning => &config.wallpapers.morning,
-		DaySection::Day => &config.wallpapers.day,
-		DaySection::Evening => &config.wallpapers.evening,
-		DaySection::Night => &config.wallpapers.night,
-	};
 
 	let target = calculate_display_settings(eval.redshift, config.steps, config.brightness_range, config.temperature_range);
 	let current = get_current_display_settings();
@@ -191,11 +183,6 @@ fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: b
 		} else {
 			info!("skipping apply: current values already lower or equal");
 		}
-	}
-
-	if wallpapers {
-		let wallpaper_path = config.wallpapers.root.join(wallpaper);
-		cmd(format!("swaymsg output '*' bg {} fill", wallpaper_path.to_str().unwrap()));
 	}
 }
 
