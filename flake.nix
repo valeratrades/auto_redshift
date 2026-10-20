@@ -26,6 +26,9 @@
             lastSupportedVersion = "nightly-2026-09-26";
             jobs.default = true;
             publishCachix = "valeratrades";
+            release = {
+              targets = [ "x86_64-unknown-linux-gnu" "aarch64-unknown-linux-gnu" ];
+            };
           };
           readme = v_flakes.readme-fw {
             inherit pkgs pname;
