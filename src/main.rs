@@ -60,7 +60,6 @@ pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), t
 
 /// Pure function to evaluate time. Takes current hour/minute and waketime, returns evaluation result.
 pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, redshift_duration: Timeframe) -> TimeEvaluation {
-	let n_hours = redshift_duration.duration().as_secs_f32() / 3600.0;
 	let nm = current_hour * 60 + current_minute;
 	let wt = waketime.hours * 60 + waketime.minutes;
 
@@ -80,15 +79,13 @@ pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime
 	let redshift = match &day_section {
 		DaySection::Morning => 0.,
 		DaySection::Day => 0.,
-		DaySection::Evening => {
+		DaySection::Evening =>
 			if now_shifted > 12 * 60 {
-				let shift_by_h = 16. - n_hours;
-				let r = (now_shifted as f32 / 60.0 - shift_by_h) * (max_redshift / n_hours);
-				r.min(20.0) // clamp to max
+				let until_full = std::time::Duration::from_secs((16 * 60 - now_shifted) as u64 * 60);
+				(max_redshift * (1.0 - until_full.div_duration_f32(redshift_duration.duration()))).max(0.)
 			} else {
 				0.
-			}
-		}
+			},
 		DaySection::Night => 20.,
 	};
 
