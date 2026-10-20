@@ -2,6 +2,9 @@
 name = "auto_redshift"
 version = "0.1.0"
 edition = "2021"
+description = "Shift wlroots display temperature and brightness through the day, relative to your waketime"
+license-file = "LICENSE"
+repository = "https://github.com/valeratrades/auto_redshift"
 include = ["src/**/*", "LICENSE", "README.md", ".cargo/*", "build.rs"]
 
 [package.metadata.cargo-machete]
