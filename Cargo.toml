@@ -1,6 +1,6 @@
 [package]
 name = "auto_redshift"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Shift wlroots display temperature and brightness through the day, relative to your waketime"
 license-file = "LICENSE"
