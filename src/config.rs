@@ -71,6 +71,9 @@ pub struct AppConfig {
 	/// Ramp from 0 to max redshift, ending at waketime-8h
 	#[settings(default = "4h")]
 	pub redshift_duration: Timeframe,
+	/// Redshift value at full night; brightness and temperature ranges are split into this many steps
+	#[settings(default = 20)]
+	pub steps: u32,
 }
 
 #[derive(Clone, Debug, MyConfigPrimitives, SettingsNested, smart_default::SmartDefault)]

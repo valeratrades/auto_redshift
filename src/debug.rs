@@ -5,7 +5,7 @@ use crate::{
 };
 
 pub fn set_redshift(config: &AppConfig, redshift: f32) {
-	let display = calculate_display_settings(redshift, config.brightness_range, config.temperature_range);
+	let display = calculate_display_settings(redshift, config.steps, config.brightness_range, config.temperature_range);
 	println!("redshift={redshift} -> brightness={}, temperature={}", display.brightness, display.temperature);
 	apply_display_settings(&display);
 }
@@ -19,7 +19,7 @@ pub fn lapse(config: &AppConfig, args: LapseArgs) {
 		.map(|i| {
 			let m = (start_m + i * step_m) % day_m;
 			let (hour, minute) = (m / 60, m % 60);
-			(hour, minute, evaluate_time(hour, minute, &args.waketime, config.redshift_duration))
+			(hour, minute, evaluate_time(hour, minute, &args.waketime, config.redshift_duration, config.steps))
 		})
 		.collect();
 	let changes: Vec<_> = (1..day.len()).filter(|&i| day[i].2.redshift != day[i - 1].2.redshift).collect();
@@ -28,7 +28,7 @@ pub fn lapse(config: &AppConfig, args: LapseArgs) {
 	let delay = args.duration.duration() / window.len() as u32;
 
 	for (hour, minute, eval) in window {
-		let display = calculate_display_settings(eval.redshift, config.brightness_range, config.temperature_range);
+		let display = calculate_display_settings(eval.redshift, config.steps, config.brightness_range, config.temperature_range);
 		println!(
 			"{hour:02}:{minute:02} section={:8} redshift={:5.2} brightness={:.2} temperature={:.0}K",
 			eval.day_section, eval.redshift, display.brightness, display.temperature

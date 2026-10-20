@@ -48,9 +48,10 @@ pub struct DisplaySettings {
 }
 
 /// Calculate actual display settings from redshift value and config ranges
-pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), temperature_range: (usize, usize)) -> DisplaySettings {
-	let brightness_step = (brightness_range.1 - brightness_range.0) / 20.0;
-	let temperature_step = (temperature_range.1 - temperature_range.0) as f32 / 20.0;
+pub fn calculate_display_settings(redshift: f32, steps: u32, brightness_range: (f32, f32), temperature_range: (usize, usize)) -> DisplaySettings {
+	assert!(steps > 0, "steps must be positive");
+	let brightness_step = (brightness_range.1 - brightness_range.0) / steps as f32;
+	let temperature_step = (temperature_range.1 - temperature_range.0) as f32 / steps as f32;
 
 	let temperature = temperature_range.1 as f32 - redshift * temperature_step;
 	let brightness = brightness_range.1 - redshift * brightness_step;
@@ -59,7 +60,7 @@ pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), t
 }
 
 /// Pure function to evaluate time. Takes current hour/minute and waketime, returns evaluation result.
-pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, redshift_duration: Timeframe) -> TimeEvaluation {
+pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, redshift_duration: Timeframe, steps: u32) -> TimeEvaluation {
 	let nm = current_hour * 60 + current_minute;
 	let wt = waketime.hours * 60 + waketime.minutes;
 
@@ -75,7 +76,7 @@ pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime
 		_ => DaySection::Night,
 	};
 
-	let max_redshift = 20.0;
+	let max_redshift = steps as f32;
 	let redshift = match &day_section {
 		DaySection::Morning => 0.,
 		DaySection::Day => 0.,
@@ -86,7 +87,7 @@ pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime
 			} else {
 				0.
 			},
-		DaySection::Night => 20.,
+		DaySection::Night => max_redshift,
 	};
 
 	TimeEvaluation { now_shifted, day_section, redshift }
@@ -155,7 +156,7 @@ fn start(settings: Arc<LiveSettings>, args: StartArgs) {
 fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: bool) {
 	let config = settings.config().unwrap();
 	let now = Zoned::now();
-	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, config.redshift_duration);
+	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, config.redshift_duration, config.steps);
 
 	let wallpaper: &str = match &eval.day_section {
 		DaySection::Morning => &config.wallpapers.morning,
@@ -164,7 +165,7 @@ fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: b
 		DaySection::Night => &config.wallpapers.night,
 	};
 
-	let target = calculate_display_settings(eval.redshift, config.brightness_range, config.temperature_range);
+	let target = calculate_display_settings(eval.redshift, config.steps, config.brightness_range, config.temperature_range);
 	let current = get_current_display_settings();
 
 	info!(
@@ -227,8 +228,8 @@ mod tests {
 		// 12:00 to 24:00 (we use 0:00 for midnight)
 		for hour in 12..=23 {
 			for minute in [0, 30] {
-				let eval = evaluate_time(hour, minute, &waketime, redshift_duration);
-				let display = calculate_display_settings(eval.redshift, brightness_range, temperature_range);
+				let eval = evaluate_time(hour, minute, &waketime, redshift_duration, 20);
+				let display = calculate_display_settings(eval.redshift, 20, brightness_range, temperature_range);
 				output.push_str(&format!(
 					"{hour:02}:{minute:02} -> section={:8}, redshift={:5.2}, temp={:6.0}K, brightness={:.2}\n",
 					eval.day_section, eval.redshift, display.temperature, display.brightness
@@ -236,8 +237,8 @@ mod tests {
 			}
 		}
 		// Add midnight (00:00)
-		let eval = evaluate_time(0, 0, &waketime, redshift_duration);
-		let display = calculate_display_settings(eval.redshift, brightness_range, temperature_range);
+		let eval = evaluate_time(0, 0, &waketime, redshift_duration, 20);
+		let display = calculate_display_settings(eval.redshift, 20, brightness_range, temperature_range);
 		output.push_str(&format!(
 			"{:02}:{:02} -> section={:8}, redshift={:5.2}, temp={:6.0}K, brightness={:.2}\n",
 			0, 0, eval.day_section, eval.redshift, display.temperature, display.brightness
