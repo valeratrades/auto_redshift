@@ -19,7 +19,7 @@ pub fn lapse(config: &AppConfig, args: LapseArgs) {
 		.map(|i| {
 			let m = (start_m + i * step_m) % day_m;
 			let (hour, minute) = (m / 60, m % 60);
-			(hour, minute, evaluate_time(hour, minute, &args.waketime, config.n_hours))
+			(hour, minute, evaluate_time(hour, minute, &args.waketime, config.redshift_duration))
 		})
 		.collect();
 	let changes: Vec<_> = (1..day.len()).filter(|&i| day[i].2.redshift != day[i - 1].2.redshift).collect();

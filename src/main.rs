@@ -8,6 +8,7 @@ use clap::Parser;
 use config::{Commands, LiveSettings, StartArgs, Waketime};
 use jiff::Zoned;
 use tracing::info;
+use v_utils::trades::Timeframe;
 
 pub mod config;
 mod debug;
@@ -58,7 +59,8 @@ pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), t
 }
 
 /// Pure function to evaluate time. Takes current hour/minute and waketime, returns evaluation result.
-pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, n_hours: f32) -> TimeEvaluation {
+pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime, redshift_duration: Timeframe) -> TimeEvaluation {
+	let n_hours = redshift_duration.duration().as_secs_f32() / 3600.0;
 	let nm = current_hour * 60 + current_minute;
 	let wt = waketime.hours * 60 + waketime.minutes;
 
@@ -156,7 +158,7 @@ fn start(settings: Arc<LiveSettings>, args: StartArgs) {
 fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: bool) {
 	let config = settings.config().unwrap();
 	let now = Zoned::now();
-	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, config.n_hours);
+	let eval = evaluate_time(now.hour() as u32, now.minute() as u32, waketime, config.redshift_duration);
 
 	let wallpaper: &str = match &eval.day_section {
 		DaySection::Morning => &config.wallpapers.morning,
@@ -211,24 +213,24 @@ mod tests {
 	use super::*;
 
 	/// Generates a snapshot of time evaluations from 12:00 to 24:00 (midnight)
-	/// with waketime set to 6:00 and n_hours = 4.0
+	/// with waketime set to 6:00 and redshift_duration = 4h
 	#[test]
 	fn test_time_evaluation_12h_to_24h() {
 		let waketime = Waketime::new(6, 0);
-		let n_hours = 4.0;
+		let redshift_duration = Timeframe::from("4h");
 		// Example config ranges (typical values)
 		let brightness_range = (0.5, 1.0);
 		let temperature_range = (2500_usize, 6500_usize);
 
 		let mut output = String::new();
-		output.push_str("Time evaluation from 12:00 to 24:00 with waketime=6:00, n_hours=4.0\n");
+		output.push_str("Time evaluation from 12:00 to 24:00 with waketime=6:00, redshift_duration=4h\n");
 		output.push_str("Config: brightness=[0.5, 1.0], temperature=[2500K, 6500K]\n");
 		output.push_str("========================================================================\n\n");
 
 		// 12:00 to 24:00 (we use 0:00 for midnight)
 		for hour in 12..=23 {
 			for minute in [0, 30] {
-				let eval = evaluate_time(hour, minute, &waketime, n_hours);
+				let eval = evaluate_time(hour, minute, &waketime, redshift_duration);
 				let display = calculate_display_settings(eval.redshift, brightness_range, temperature_range);
 				output.push_str(&format!(
 					"{hour:02}:{minute:02} -> section={:8}, redshift={:5.2}, temp={:6.0}K, brightness={:.2}\n",
@@ -237,43 +239,43 @@ mod tests {
 			}
 		}
 		// Add midnight (00:00)
-		let eval = evaluate_time(0, 0, &waketime, n_hours);
+		let eval = evaluate_time(0, 0, &waketime, redshift_duration);
 		let display = calculate_display_settings(eval.redshift, brightness_range, temperature_range);
 		output.push_str(&format!(
 			"{:02}:{:02} -> section={:8}, redshift={:5.2}, temp={:6.0}K, brightness={:.2}\n",
 			0, 0, eval.day_section, eval.redshift, display.temperature, display.brightness
 		));
 
-		insta::assert_snapshot!(output, @r"
-Time evaluation from 12:00 to 24:00 with waketime=6:00, n_hours=4.0
-Config: brightness=[0.5, 1.0], temperature=[2500K, 6500K]
-========================================================================
+		insta::assert_snapshot!(output, @"
+		Time evaluation from 12:00 to 24:00 with waketime=6:00, redshift_duration=4h
+		Config: brightness=[0.5, 1.0], temperature=[2500K, 6500K]
+		========================================================================
 
-12:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-12:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-13:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-13:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-14:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-14:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-15:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-15:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-16:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-16:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
-17:00 -> section=evening, redshift= 0.00, temp=  6500K, brightness=1.00
-17:30 -> section=evening, redshift= 0.00, temp=  6500K, brightness=1.00
-18:00 -> section=evening, redshift= 0.00, temp=  6500K, brightness=1.00
-18:30 -> section=evening, redshift= 2.50, temp=  6000K, brightness=0.94
-19:00 -> section=evening, redshift= 5.00, temp=  5500K, brightness=0.88
-19:30 -> section=evening, redshift= 7.50, temp=  5000K, brightness=0.81
-20:00 -> section=evening, redshift=10.00, temp=  4500K, brightness=0.75
-20:30 -> section=evening, redshift=12.50, temp=  4000K, brightness=0.69
-21:00 -> section=evening, redshift=15.00, temp=  3500K, brightness=0.62
-21:30 -> section=evening, redshift=17.50, temp=  3000K, brightness=0.56
-22:00 -> section=evening, redshift=20.00, temp=  2500K, brightness=0.50
-22:30 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
-23:00 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
-23:30 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
-00:00 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
-");
+		12:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		12:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		13:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		13:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		14:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		14:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		15:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		15:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		16:00 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		16:30 -> section=day, redshift= 0.00, temp=  6500K, brightness=1.00
+		17:00 -> section=evening, redshift= 0.00, temp=  6500K, brightness=1.00
+		17:30 -> section=evening, redshift= 0.00, temp=  6500K, brightness=1.00
+		18:00 -> section=evening, redshift= 0.00, temp=  6500K, brightness=1.00
+		18:30 -> section=evening, redshift= 2.50, temp=  6000K, brightness=0.94
+		19:00 -> section=evening, redshift= 5.00, temp=  5500K, brightness=0.88
+		19:30 -> section=evening, redshift= 7.50, temp=  5000K, brightness=0.81
+		20:00 -> section=evening, redshift=10.00, temp=  4500K, brightness=0.75
+		20:30 -> section=evening, redshift=12.50, temp=  4000K, brightness=0.69
+		21:00 -> section=evening, redshift=15.00, temp=  3500K, brightness=0.62
+		21:30 -> section=evening, redshift=17.50, temp=  3000K, brightness=0.56
+		22:00 -> section=evening, redshift=20.00, temp=  2500K, brightness=0.50
+		22:30 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
+		23:00 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
+		23:30 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
+		00:00 -> section=night, redshift=20.00, temp=  2500K, brightness=0.50
+		");
 	}
 }

@@ -68,9 +68,9 @@ pub struct AppConfig {
 	/// Minutes between brightness adjustments
 	#[settings(default = 10)]
 	pub update_interval_m: u32,
-	/// Hours over which redshift ramps from 0 to max, ending at waketime+16h
-	#[settings(default = 4.0)]
-	pub n_hours: f32,
+	/// Ramp from 0 to max redshift, ending at waketime-8h
+	#[settings(default = "4h")]
+	pub redshift_duration: Timeframe,
 }
 
 #[derive(Clone, Debug, MyConfigPrimitives, SettingsNested, smart_default::SmartDefault)]
