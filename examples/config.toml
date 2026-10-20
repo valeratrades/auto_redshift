@@ -3,7 +3,8 @@ temperature_range = [2300, 6500]
 update_interval_m = 10
 
 [wallpapers]
-root = "/home/v/Wallpapers"
+#root = { env = "${NIXOS_CONFIG}/home/config/sway/wallpapers" }
+root = "~/nix/home/config/sway/wallpapers" #TODO!!!!!: rewrite the auto_redshift to support MyConfigPrimitives from v_utils
 morning = "1929.jpg"
 day = "AndreySakharov.jpg"
 evening = "girl_with_a_perl_earring.jpg"

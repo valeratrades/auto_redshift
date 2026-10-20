@@ -6,11 +6,6 @@ edition = "2021"
 [package.metadata.cargo-machete]
 ignored = ["derive-new", "serde", "tokio"]
 
-#? still not sure if these do anything
-[lints.clippy]
-get_first = "allow"
-len_zero = "allow"
-
 [dependencies]
 clap = { version = "^4.5.54", features = ["derive"] }
 color-eyre = "0.6"
@@ -20,7 +15,15 @@ jiff = "0.2"
 serde = { version = "1.0.228", features = ["derive"] }
 smart-default = "0.7.1"
 tracing = "0.1"
-v_utils = { version = "^2.15.19", features = ["io", "macros", "cli", "tracing", "xdg"] }
+v_utils = { version = "^2.15.19", features = ["io", "macros", "cli", "tracing", "trades", "xdg"] }
 
 [dev-dependencies]
 insta = "1.46"
+
+#? still not sure if these do anything
+[lints.clippy]
+get_first = "allow"
+len_zero = "allow"
+
+[lints.rust]
+unused_features = "allow"

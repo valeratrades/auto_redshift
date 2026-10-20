@@ -5,13 +5,14 @@ use std::{
 };
 
 use clap::Parser;
-use config::{AppConfig, Commands, LiveSettings, StartArgs, Waketime};
+use config::{Commands, LiveSettings, StartArgs, Waketime};
 use jiff::Zoned;
 use tracing::info;
 
 pub mod config;
+mod debug;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DaySection {
 	Morning,
 	Day,
@@ -31,7 +32,7 @@ impl std::fmt::Display for DaySection {
 }
 
 /// Result of evaluating time against waketime
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TimeEvaluation {
 	pub now_shifted: i32,
 	pub day_section: DaySection,
@@ -39,7 +40,7 @@ pub struct TimeEvaluation {
 }
 
 /// Actual display settings calculated from redshift value and config ranges
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DisplaySettings {
 	pub temperature: f32,
 	pub brightness: f32,
@@ -54,38 +55,6 @@ pub fn calculate_display_settings(redshift: f32, brightness_range: (f32, f32), t
 	let brightness = brightness_range.1 - redshift * brightness_step;
 
 	DisplaySettings { temperature, brightness }
-}
-
-/// Get current display settings from wlr_gamma_service
-fn get_current_display_settings() -> Option<DisplaySettings> {
-	let extra_characters: &[_] = &['(', ')', ','];
-
-	let temp_output =
-		cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
-	let temperature: f32 = String::from_utf8_lossy(&temp_output.stdout)
-		.trim()
-		.trim_matches(extra_characters)
-		.parse()
-		.ok()?;
-
-	let bright_output =
-		cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
-	let brightness: f32 = String::from_utf8_lossy(&bright_output.stdout)
-		.trim()
-		.trim_matches(extra_characters)
-		.parse()
-		.ok()?;
-
-	Some(DisplaySettings { temperature, brightness })
-}
-
-/// Apply display settings via wlr_gamma_service
-fn apply_display_settings(display: &DisplaySettings) {
-	cmd(format!(
-		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && \
-		 gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}",
-		display.temperature, display.brightness
-	));
 }
 
 /// Pure function to evaluate time. Takes current hour/minute and waketime, returns evaluation result.
@@ -121,13 +90,8 @@ pub fn evaluate_time(current_hour: u32, current_minute: u32, waketime: &Waketime
 		DaySection::Night => 20.,
 	};
 
-	TimeEvaluation {
-		now_shifted,
-		day_section,
-		redshift,
-	}
+	TimeEvaluation { now_shifted, day_section, redshift }
 }
-
 fn main() {
 	v_utils::clientside!();
 
@@ -137,20 +101,30 @@ fn main() {
 
 	match cli.command {
 		Commands::Start(args) => start(settings, args),
-		Commands::Dbg { redshift } => {
-			let config = settings.config().unwrap();
-			dbg_set_redshift(&config, redshift);
-		}
+		Commands::Dbg { redshift } => debug::set_redshift(&settings.config().unwrap(), redshift),
+		Commands::Lapse(args) => debug::lapse(&settings.config().unwrap(), args),
 	}
 }
+/// Get current display settings from wlr_gamma_service
+fn get_current_display_settings() -> Option<DisplaySettings> {
+	let extra_characters: &[_] = &['(', ')', ','];
 
-fn dbg_set_redshift(config: &AppConfig, redshift: f32) {
-	let display = calculate_display_settings(redshift, config.brightness_range, config.temperature_range);
-	println!(
-		"redshift={} -> brightness={}, temperature={}",
-		redshift, display.brightness, display.temperature
-	);
-	apply_display_settings(&display);
+	let temp_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
+	let temperature: f32 = String::from_utf8_lossy(&temp_output.stdout).trim().trim_matches(extra_characters).parse().ok()?;
+
+	let bright_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
+	let brightness: f32 = String::from_utf8_lossy(&bright_output.stdout).trim().trim_matches(extra_characters).parse().ok()?;
+
+	Some(DisplaySettings { temperature, brightness })
+}
+
+/// Apply display settings via wlr_gamma_service
+fn apply_display_settings(display: &DisplaySettings) {
+	cmd(format!(
+		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && \
+		 gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}",
+		display.temperature, display.brightness
+	));
 }
 
 fn start(settings: Arc<LiveSettings>, args: StartArgs) {
@@ -171,6 +145,7 @@ fn start(settings: Arc<LiveSettings>, args: StartArgs) {
 	};
 	set_redshift(&settings, &waketime, args.wallpapers, args.n_hours);
 	std::thread::sleep(std::time::Duration::from_secs(wait_to_sync_m as u64 * 60));
+	//LOOP: daemon, runs until killed
 	loop {
 		set_redshift(&settings, &waketime, args.wallpapers, args.n_hours);
 		let config = settings.config().unwrap();
@@ -226,8 +201,7 @@ fn set_redshift(settings: &Arc<LiveSettings>, waketime: &Waketime, wallpapers: b
 
 fn cmd<S>(command: S) -> Output
 where
-	S: AsRef<OsStr>,
-{
+	S: AsRef<OsStr>, {
 	let output = Command::new("sh").arg("-c").arg(command).output().unwrap();
 	output
 }
@@ -257,8 +231,8 @@ mod tests {
 				let eval = evaluate_time(hour, minute, &waketime, n_hours);
 				let display = calculate_display_settings(eval.redshift, brightness_range, temperature_range);
 				output.push_str(&format!(
-					"{:02}:{:02} -> section={:8}, redshift={:5.2}, temp={:6.0}K, brightness={:.2}\n",
-					hour, minute, eval.day_section, eval.redshift, display.temperature, display.brightness
+					"{hour:02}:{minute:02} -> section={:8}, redshift={:5.2}, temp={:6.0}K, brightness={:.2}\n",
+					eval.day_section, eval.redshift, display.temperature, display.brightness
 				));
 			}
 		}
