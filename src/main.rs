@@ -118,11 +118,10 @@ fn get_current_display_settings() -> Option<DisplaySettings> {
 	Some(DisplaySettings { temperature, brightness })
 }
 
-/// Apply display settings via wlr_gamma_service
+/// Apply display settings via wlr_gamma_service, as one table so a change can't land half-applied
 fn apply_display_settings(display: &DisplaySettings) {
 	cmd(format!(
-		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && \
-		 gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}",
+		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.gamma.set {:.0} {}",
 		display.temperature, display.brightness
 	));
 }
