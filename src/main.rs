@@ -120,9 +120,8 @@ fn get_current_display_settings() -> Option<DisplaySettings> {
 
 /// Apply display settings via wlr_gamma_service
 fn apply_display_settings(display: &DisplaySettings) {
-	// `sleep`: the NVIDIA driver drops a gamma change sent while the previous one is still uploading
 	cmd(format!(
-		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && sleep 0.2 && \
+		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && \
 		 gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}",
 		display.temperature, display.brightness
 	));
