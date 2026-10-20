@@ -10,6 +10,7 @@ ignored = ["derive-new", "serde", "tokio"]
 clap = { version = "^4.5.54", features = ["derive"] }
 color-eyre = "0.6"
 config = "0.15.19"
+ctrlc = "3.5.2"
 derive-new = "^0.7.0"
 jiff = "0.2"
 serde = { version = "1.0.228", features = ["derive"] }

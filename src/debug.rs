@@ -11,7 +11,19 @@ pub fn set_redshift(config: &AppConfig, redshift: f32) {
 }
 
 pub fn lapse(config: &AppConfig, args: LapseArgs) {
-	let initial = get_current_display_settings().expect("wlr_gamma_service unreachable; nothing to restore to");
+	let initial = get_current_display_settings().expect("wl-gammarelay-rs unreachable; nothing to restore to");
+	let restore = move || {
+		println!("restoring brightness={:.2} temperature={:.0}K", initial.brightness, initial.temperature);
+		apply_display_settings(&initial);
+	};
+	ctrlc::set_handler({
+		let restore = restore.clone();
+		move || {
+			restore();
+			std::process::exit(130);
+		}
+	})
+	.expect("no other SIGINT handler is installed");
 	let window = ramp(config, &args.waketime);
 	let delay = args.duration.duration() / window.len() as u32;
 
@@ -24,8 +36,7 @@ pub fn lapse(config: &AppConfig, args: LapseArgs) {
 		apply_display_settings(&display);
 		std::thread::sleep(delay);
 	}
-	println!("restoring brightness={:.2} temperature={:.0}K", initial.brightness, initial.temperature);
-	apply_display_settings(&initial);
+	restore();
 }
 
 fn ramp(config: &AppConfig, waketime: &Waketime) -> Vec<(u32, u32, TimeEvaluation)> {
@@ -53,14 +64,12 @@ mod tests {
 	use v_utils::trades::Timeframe;
 
 	use super::*;
-	use crate::config::BrightnessBackend;
 
 	#[test]
 	fn ramp_ends_at_full_redshift() {
 		let config = AppConfig {
 			brightness_range: (0.35, 1.),
 			temperature_range: (2300, 6500),
-			brightness_backend: BrightnessBackend::WlrGamma,
 			update_interval_m: 10,
 			redshift_duration: Timeframe::from("4h"),
 			steps: 20,
