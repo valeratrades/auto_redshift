@@ -105,24 +105,23 @@ fn main() {
 		Commands::Lapse(args) => debug::lapse(&settings.config().unwrap(), args),
 	}
 }
-/// Get current display settings from wlr_gamma_service
+/// Get current display settings from wl-gammarelay-rs
 fn get_current_display_settings() -> Option<DisplaySettings> {
-	let extra_characters: &[_] = &['(', ')', ','];
-
-	let temp_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.get");
-	let temperature: f32 = String::from_utf8_lossy(&temp_output.stdout).trim().trim_matches(extra_characters).parse().ok()?;
-
-	let bright_output = cmd("gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.get");
-	let brightness: f32 = String::from_utf8_lossy(&bright_output.stdout).trim().trim_matches(extra_characters).parse().ok()?;
-
+	let get = |prop: &str| {
+		let out = cmd(format!("busctl --user get-property rs.wl-gammarelay / rs.wl.gammarelay {prop}"));
+		// prints `<signature> <value>`
+		String::from_utf8_lossy(&out.stdout).split_whitespace().nth(1).map(str::to_owned)
+	};
+	let temperature: f32 = get("Temperature")?.parse().ok()?;
+	let brightness: f32 = get("Brightness")?.parse().ok()?;
 	Some(DisplaySettings { temperature, brightness })
 }
 
-/// Apply display settings via wlr_gamma_service
+/// Apply display settings via wl-gammarelay-rs, which also applies them to outputs attached later
 fn apply_display_settings(display: &DisplaySettings) {
 	cmd(format!(
-		"gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.temperature.set {} && \
-		 gdbus call -e -d net.zoidplex.wlr_gamma_service -o /net/zoidplex/wlr_gamma_service -m net.zoidplex.wlr_gamma_service.brightness.set {}",
+		"busctl --user set-property rs.wl-gammarelay / rs.wl.gammarelay Temperature q {:.0} && \
+		 busctl --user set-property rs.wl-gammarelay / rs.wl.gammarelay Brightness d {}",
 		display.temperature, display.brightness
 	));
 }
