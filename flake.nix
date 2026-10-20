@@ -25,6 +25,7 @@
             enable = true;
             lastSupportedVersion = "nightly-2026-09-26";
             jobs.default = true;
+            publishCachix = "valeratrades";
           };
           readme = v_flakes.readme-fw {
             inherit pkgs pname;
