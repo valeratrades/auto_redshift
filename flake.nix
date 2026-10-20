@@ -31,6 +31,7 @@
             defaults = true;
             lastSupportedVersion = "nightly-1.100";
             rootDir = ./.;
+            licenses = [{ license = v_flakes.files.licenses.gl; }];
             badges = [ "msrv" "loc" "ci" ];
           };
           combined = v_flakes.utils.combine { inherit rust; modules = [ readme github rs ]; };

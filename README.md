@@ -31,7 +31,7 @@ TODO
 #### License
 
 <sup>
-	Licensed under <a href="LICENSE">Blue Oak 1.0.0</a>
+	Licensed under <a href="LICENSE">GLWTS</a>
 </sup>
 
 <br>
