@@ -1,6 +1,6 @@
 use crate::{
-	apply_display_settings, calculate_display_settings,
-	config::{AppConfig, LapseArgs},
+	TimeEvaluation, apply_display_settings, calculate_display_settings,
+	config::{AppConfig, LapseArgs, Waketime},
 	evaluate_time,
 };
 
@@ -11,20 +11,7 @@ pub fn set_redshift(config: &AppConfig, redshift: f32) {
 }
 
 pub fn lapse(config: &AppConfig, args: LapseArgs) {
-	let day_m = 24 * 60;
-	let step_m = config.update_interval_m;
-	assert!(step_m > 0 && step_m <= day_m, "update_interval_m must be in 1..=1440");
-	let start_m = args.waketime.hours * 60 + args.waketime.minutes;
-	let day: Vec<_> = (0..day_m / step_m)
-		.map(|i| {
-			let m = (start_m + i * step_m) % day_m;
-			let (hour, minute) = (m / 60, m % 60);
-			(hour, minute, evaluate_time(hour, minute, &args.waketime, config.redshift_duration, config.steps))
-		})
-		.collect();
-	let changes: Vec<_> = (1..day.len()).filter(|&i| day[i].2.redshift != day[i - 1].2.redshift).collect();
-	let (first, last) = (*changes.first().expect("redshift never changes over the day"), *changes.last().unwrap());
-	let window = &day[first - 1..=last];
+	let window = ramp(config, &args.waketime);
 	let delay = args.duration.duration() / window.len() as u32;
 
 	for (hour, minute, eval) in window {
@@ -35,5 +22,49 @@ pub fn lapse(config: &AppConfig, args: LapseArgs) {
 		);
 		apply_display_settings(&display);
 		std::thread::sleep(delay);
+	}
+}
+
+fn ramp(config: &AppConfig, waketime: &Waketime) -> Vec<(u32, u32, TimeEvaluation)> {
+	let day_m = 24 * 60;
+	let step_m = config.update_interval_m;
+	assert!(step_m > 0 && step_m <= day_m, "update_interval_m must be in 1..=1440");
+	let start_m = waketime.hours * 60 + waketime.minutes;
+	let mut day: Vec<_> = (0..day_m / step_m)
+		.map(|i| {
+			let m = (start_m + i * step_m) % day_m;
+			let (hour, minute) = (m / 60, m % 60);
+			(hour, minute, evaluate_time(hour, minute, waketime, config.redshift_duration, config.steps))
+		})
+		.collect();
+	let changed = |i: &usize| day[*i].2.redshift != day[*i - 1].2.redshift;
+	let first = (1..day.len()).find(changed).expect("redshift never changes over the day");
+	let last = (first..day.len()).take_while(changed).last().expect("starts at a change");
+	day.truncate(last + 1);
+	day.drain(..first - 1);
+	day
+}
+
+#[cfg(test)]
+mod tests {
+	use v_utils::trades::Timeframe;
+
+	use super::*;
+	use crate::config::BrightnessBackend;
+
+	#[test]
+	fn ramp_ends_at_full_redshift() {
+		let config = AppConfig {
+			brightness_range: (0.35, 1.),
+			temperature_range: (2300, 6500),
+			brightness_backend: BrightnessBackend::WlrGamma,
+			update_interval_m: 10,
+			redshift_duration: Timeframe::from("4h"),
+			steps: 20,
+		};
+		let window = ramp(&config, &Waketime::new(7, 10));
+		let (first, last) = (&window[0], window.last().unwrap());
+		assert_eq!((first.0, first.1, first.2.redshift), (19, 10, 0.));
+		assert_eq!((last.0, last.1, last.2.redshift), (23, 10, 20.));
 	}
 }
