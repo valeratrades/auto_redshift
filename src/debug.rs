@@ -61,7 +61,7 @@ fn ramp(config: &AppConfig, waketime: &Waketime) -> Vec<(u32, u32, TimeEvaluatio
 
 #[cfg(test)]
 mod tests {
-	use v_utils::trades::Timeframe;
+	use v_utils::Timeframe;
 
 	use super::*;
 
@@ -74,7 +74,7 @@ mod tests {
 			redshift_duration: Timeframe::from("4h"),
 			steps: 20,
 		};
-		let window = ramp(&config, &Waketime::new(7, 10));
+		let window = ramp(&config, &Waketime { hours: 7, minutes: 10 });
 		let (first, last) = (&window[0], window.last().unwrap());
 		assert_eq!((first.0, first.1, first.2.redshift), (19, 10, 0.));
 		assert_eq!((last.0, last.1, last.2.redshift), (23, 10, 20.));

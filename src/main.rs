@@ -8,7 +8,7 @@ use clap::Parser;
 use config::{Commands, LiveSettings, Waketime};
 use jiff::Zoned;
 use tracing::info;
-use v_utils::trades::Timeframe;
+use v_utils::Timeframe;
 
 pub mod config;
 mod debug;
@@ -200,7 +200,7 @@ mod tests {
 	/// with waketime set to 6:00 and redshift_duration = 4h
 	#[test]
 	fn test_time_evaluation_12h_to_24h() {
-		let waketime = Waketime::new(6, 0);
+		let waketime = Waketime { hours: 6, minutes: 0 };
 		let redshift_duration = Timeframe::from("4h");
 		// Example config ranges (typical values)
 		let brightness_range = (0.5, 1.0);

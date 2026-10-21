@@ -2,7 +2,7 @@ use clap::Parser;
 use serde::{Deserialize, Deserializer};
 use v_utils::{
 	macros::{LiveSettings, MyConfigPrimitives, Settings},
-	trades::Timeframe,
+	Timeframe,
 };
 
 /// CLI struct with SettingsFlags for clap integration
@@ -35,23 +35,23 @@ pub struct LapseArgs {
 #[derive(Clone, Debug, LiveSettings, MyConfigPrimitives, Settings)]
 pub struct AppConfig {
 	#[serde(deserialize_with = "deserialize_tuple")]
-	#[settings(skip(flag))]
+	#[settings(skip)]
 	pub brightness_range: (f32, f32),
 	#[serde(deserialize_with = "deserialize_tuple")]
-	#[settings(skip(flag))]
+	#[settings(skip)]
 	pub temperature_range: (usize, usize),
 	/// Minutes between brightness adjustments
 	#[settings(default = 10)]
 	pub update_interval_m: u32,
 	/// Ramp from 0 to max redshift, ending at waketime-8h
-	#[settings(default = "4h")]
+	#[settings(default = "4h".into())]
 	pub redshift_duration: Timeframe,
 	/// Redshift value at full night; brightness and temperature ranges are split into this many steps
 	#[settings(default = 20)]
 	pub steps: u32,
 }
 
-#[derive(Clone, Copy, Debug, derive_new::new)]
+#[derive(Clone, Copy, Debug)]
 pub struct Waketime {
 	pub hours: u32,
 	pub minutes: u32,
