@@ -35,6 +35,7 @@ get_first = "allow"
 len_zero = "allow"
 
 [lints.rust]
+stable_features = "allow"
 unused_features = "allow"
 
 [lints.cargo]
